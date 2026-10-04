@@ -1,0 +1,131 @@
+// BloodPulse database schema.
+// SQLite for zero-setup local dev. To move to PostgreSQL: change `provider` to "postgresql",
+// set DATABASE_URL to your Postgres URL, then run `npm run db:push` (or migrate).
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Hospital {
+  id                   String @id
+  name                 String
+  address              String
+  lat                  Float
+  lng                  Float
+  emergencyPhoneMasked String
+
+  @@map("hospitals")
+}
+
+model Donor {
+  id                  String    @id @default(cuid())
+  maskedCode          String    @unique
+  name                String
+  phoneEnc            String // AES-256-GCM encrypted phone, never returned by the API
+  phoneMasked         String
+  tokenHash           String? // SHA-256 of the donor's access token
+  bloodType           String // O-, O+, A-, A+, B-, B+, AB-, AB+
+  status              String    @default("AVAILABLE") // AVAILABLE | STANDBY | RECENTLY_DONATED | OFFLINE
+  city                String
+  pincode             String
+  lat                 Float
+  lng                 Float
+  responseRate        Int       @default(90)
+  avgResponseTimeMins Int       @default(10)
+  totalDonations      Int       @default(0)
+  lastDonationDate    DateTime?
+  cooldownUntil       DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  dispatches Dispatch[]
+  channels   RelayChannel[]
+
+  @@index([bloodType, status])
+  @@map("donors")
+}
+
+model BloodRequest {
+  id                   String   @id @default(cuid())
+  patientName          String
+  patientId            String
+  recipientBloodType   String
+  hospitalName         String
+  hospitalAddress      String
+  hospitalLat          Float
+  hospitalLng          Float
+  urgency              String // IMMEDIATE | WITHIN_12_HOURS
+  unitsRequired        Int
+  prescriptionVerified Boolean  @default(false)
+  prescriptionFileName String?
+  status               String   @default("DISPATCHED") // ACTIVE | DISPATCHED | MATCHED | FULFILLED | CANCELLED
+  contactName          String
+  contactMaskedPhone   String
+  acceptedDonorId      String?
+  relayChannelId       String?
+  seekerTokenHash      String?
+  createdAt            DateTime @default(now())
+
+  dispatches Dispatch[]
+  channels   RelayChannel[]
+
+  @@index([status, createdAt])
+  @@map("blood_requests")
+}
+
+model Dispatch {
+  id         String   @id @default(cuid())
+  requestId  String
+  donorId    String
+  distanceKm Float
+  matchScore Int
+  etaMinutes Int
+  createdAt  DateTime @default(now())
+
+  request BloodRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  donor   Donor        @relation(fields: [donorId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, donorId])
+  @@index([donorId])
+  @@map("dispatches")
+}
+
+model RelayChannel {
+  id                  String   @id @default(cuid())
+  requestId           String
+  donorId             String
+  seekerContactMasked String
+  donorMaskedCode     String
+  virtualProxyNumber  String
+  expiresAt           DateTime
+  status              String   @default("ACTIVE") // ACTIVE | EXPIRED | FULFILLED
+  hospitalName        String
+  bloodType           String
+  unitsRequired       Int
+  createdAt           DateTime @default(now())
+
+  request  BloodRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  donor    Donor        @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([donorId, status])
+  @@map("relay_channels")
+}
+
+model Message {
+  id               String   @id @default(cuid())
+  channelId        String
+  sender           String // SEEKER | DONOR | SYSTEM
+  senderMaskedName String
+  text             String
+  timestamp        DateTime @default(now())
+
+  channel RelayChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, timestamp])
+  @@map("messages")
+}
