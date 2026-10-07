@@ -46,7 +46,8 @@ async function main() {
     });
   }
 
-  for (const [i, d] of INITIAL_DONORS.entries()) {
+  for (let i = 0; i < INITIAL_DONORS.length; i++) {
+    const d = INITIAL_DONORS[i];
     await prisma.donor.create({
       data: {
         id: d.id,
